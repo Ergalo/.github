@@ -1,0 +1,101 @@
+# Contrôles communs Ergalo (workflow réutilisable).
+# Utilisation dans un projet :
+#   jobs:
+#     ci:
+#       uses: Ergalo/.github/.github/workflows/ci.yml@v1
+#       with:
+#         e2e: true
+name: CI Ergalo
+
+on:
+  workflow_call:
+    inputs:
+      node-version:
+        description: Version de Node.js
+        type: string
+        default: "22"
+      e2e:
+        description: Lancer les tests de bout en bout (Playwright + Postgres)
+        type: boolean
+        default: true
+      security:
+        description: Lancer OSV-Scanner et Semgrep
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  qualite:
+    name: Types, lint, tests unitaires, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run typecheck
+      - run: pnpm run lint
+      - run: pnpm run test
+      - run: pnpm run build
+        env:
+          SKIP_ENV_VALIDATION: "1"
+
+  e2e:
+    name: Tests de bout en bout
+    if: ${{ inputs.e2e }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: app
+          POSTGRES_PASSWORD: app
+          POSTGRES_DB: app
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U app"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://app:app@localhost:5432/app
+      BETTER_AUTH_SECRET: ci-secret-only-for-tests-0123456789abcdef
+      BETTER_AUTH_URL: http://localhost:3000
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run db:migrate
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm run build
+      - run: pnpm run test:e2e
+      - uses: actions/upload-artifact@v4
+        if: ${{ failure() }}
+        with:
+          name: rapport-playwright
+          path: playwright-report/
+          retention-days: 7
+
+  securite:
+    name: Failles connues et analyse du code
+    if: ${{ inputs.security }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - name: OSV-Scanner (dépendances)
+        run: docker run --rm -v "$PWD:/src" ghcr.io/google/osv-scanner:latest scan source -r /src
+      - name: Semgrep CE (code)
+        run: docker run --rm -v "$PWD:/src" -w /src semgrep/semgrep semgrep scan --config p/default --config p/typescript --error --metrics=off --exclude node_modules

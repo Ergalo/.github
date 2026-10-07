@@ -1,0 +1,40 @@
+# Revue automatique d'une pull request par Claude (optionnelle).
+# Utilise la clé API du dépôt où il tourne (secret ANTHROPIC_API_KEY).
+# Utilisation :
+#   on: pull_request
+#   jobs:
+#     revue:
+#       uses: Ergalo/.github/.github/workflows/claude-review.yml@v1
+#       secrets:
+#         ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+name: Revue Claude
+
+on:
+  workflow_call:
+    secrets:
+      ANTHROPIC_API_KEY:
+        required: true
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+  id-token: write
+
+jobs:
+  revue:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            Relis cette pull request en français, pour un dirigeant qui ne code pas.
+            Signale en priorité : bugs, failles de sécurité, secrets ou données réelles
+            dans le code, tests manquants sur la logique métier, et tout ce qui sort
+            du périmètre annoncé. Termine par un verdict clair : « OK pour fusionner »
+            ou « À corriger avant fusion », avec la liste des points.
