@@ -1,10 +1,16 @@
-# Contrôles communs Ergalo (workflow réutilisable).
+# Contrôles communs Ergalo (workflow réutilisable), v2.
 # Utilisation dans un projet :
 #   jobs:
 #     ci:
-#       uses: Ergalo/.github/.github/workflows/ci.yml@v1
+#       uses: Ergalo/.github/.github/workflows/ci.yml@v2
 #       with:
 #         e2e: true
+#
+# v2 (doc 49, mesure 3) : actions épinglées par SHA, droits minimaux, identifiants git non gardés après le
+# checkout, choix du runner, et analyses de sécurité dans un workflow à part (securite.yml : gitleaks,
+# zizmor, OSV-Scanner, Semgrep), appelable seul par les dépôts qui gardent leur propre CI.
+# Contrôles obligatoires à déclarer dans le ruleset du dépôt appelant (job appelant nommé « ci ») :
+#   « ci / Types, lint, tests unitaires, build », « ci / Tests de bout en bout », « ci / securite / Sécurité ».
 name: CI Ergalo
 
 on:
@@ -19,9 +25,15 @@ on:
         type: boolean
         default: true
       security:
-        description: Lancer OSV-Scanner et Semgrep
+        description: Lancer les analyses de sécurité (securite.yml)
         type: boolean
         default: true
+      runner:
+        description: >-
+          Où tourner, en JSON : '"ubuntu-latest"' (par défaut) ou '["self-hosted","ergalo"]' (runners d'ergalo-ci,
+          seulement pour un dépôt privé qui a ses runners inscrits).
+        type: string
+        default: '"ubuntu-latest"'
 
 permissions:
   contents: read
@@ -29,12 +41,14 @@ permissions:
 jobs:
   qualite:
     name: Types, lint, tests unitaires, build
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(inputs.runner) }}
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v5
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: ${{ inputs.node-version }}
           cache: pnpm
@@ -49,39 +63,46 @@ jobs:
   e2e:
     name: Tests de bout en bout
     if: ${{ inputs.e2e }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(inputs.runner) }}
     timeout-minutes: 30
     services:
       postgres:
-        image: postgres:17-alpine
+        image: postgres:17.11-alpine@sha256:eee6c6e1b0894fa4fe0075eb054af9fd1cf39a35321c2d4110626cfe506411fb
         env:
           POSTGRES_USER: app
           POSTGRES_PASSWORD: app
           POSTGRES_DB: app
-        ports:
-          - 5432:5432
+        # Port choisi par Docker : plusieurs CI peuvent tourner en même temps sur le même serveur.
+        ports: ["5432"]
         options: >-
           --health-cmd "pg_isready -U app"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
     env:
-      DATABASE_URL: postgres://app:app@localhost:5432/app
+      DATABASE_URL: postgres://app:app@localhost:${{ job.services.postgres.ports['5432'] }}/app
       BETTER_AUTH_SECRET: ci-secret-only-for-tests-0123456789abcdef
       BETTER_AUTH_URL: http://localhost:3000
     steps:
-      - uses: actions/checkout@v5
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: ${{ inputs.node-version }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm run db:migrate
-      - run: pnpm exec playwright install --with-deps chromium
+      # Dépendances système de Chromium : installées par Playwright sur un runner GitHub ; déjà présentes
+      # sur ergalo-ci (pas de sudo pour le runner).
+      - name: Navigateurs de test
+        env:
+          AVEC_DEPS: ${{ inputs.runner == '"ubuntu-latest"' && '--with-deps' || '' }}
+        run: pnpm exec playwright install $AVEC_DEPS chromium
       - run: pnpm run build
       - run: pnpm run test:e2e
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: ${{ failure() }}
         with:
           name: rapport-playwright
@@ -89,13 +110,8 @@ jobs:
           retention-days: 7
 
   securite:
-    name: Failles connues et analyse du code
     if: ${{ inputs.security }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v5
-      - name: OSV-Scanner (dépendances)
-        run: docker run --rm -v "$PWD:/src" ghcr.io/google/osv-scanner:latest scan source -r /src
-      - name: Semgrep CE (code)
-        run: docker run --rm -v "$PWD:/src" -w /src semgrep/semgrep semgrep scan --config p/default --config p/typescript --error --metrics=off --exclude node_modules
+    # « $/ » : securite.yml du même dépôt, au même commit que ce ci.yml (syntaxe GitHub de juillet 2026).
+    uses: $/.github/workflows/securite.yml
+    with:
+      runner: ${{ inputs.runner }}
