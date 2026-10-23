@@ -79,10 +79,11 @@ jobs:
         if: ${{ !cancelled() }}
         run: docker run --rm -v "$PWD:/src:ro" "$ZIZMOR" --offline --no-progress /src
 
-      # Failles connues des dépendances (fichiers de verrouillage npm, pnpm, Python…).
+      # Failles connues des dépendances (fichiers de verrouillage npm, pnpm, Python…) ; un dépôt sans
+      # dépendances (comme celui-ci) passe sans erreur.
       - name: Dépendances (OSV-Scanner)
         if: ${{ !cancelled() }}
-        run: docker run --rm -v "$PWD:/src:ro" "$OSV_SCANNER" scan source -r /src
+        run: docker run --rm -v "$PWD:/src:ro" "$OSV_SCANNER" scan source --allow-no-lockfiles -r /src
 
       - name: Code (Semgrep CE)
         if: ${{ !cancelled() && inputs.semgrep }}
