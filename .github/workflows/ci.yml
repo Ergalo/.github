@@ -102,7 +102,7 @@ jobs:
       # sur ergalo-ci (pas de sudo pour le runner).
       - name: Navigateurs de test
         env:
-          AVEC_DEPS: ${{ inputs.runner == '"ubuntu-latest"' && '--with-deps' || '' }}
+          AVEC_DEPS: ${{ !contains(inputs.runner, 'self-hosted') && '--with-deps' || '' }}
         run: pnpm exec playwright install $AVEC_DEPS chromium
       - run: pnpm run build
       - run: pnpm run test:e2e

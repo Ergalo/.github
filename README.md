@@ -5,7 +5,7 @@ Dépôt public de l'organisation Ergalo. Il ne contient que des réglages géné
 - `.github/workflows/ci.yml` : contrôles communs réutilisables (types, lint, tests unitaires, build, tests de bout en bout avec Postgres) et analyses de sécurité (appel de `securite.yml`).
 - `.github/workflows/securite.yml` : analyses de sécurité, appelables seules par un dépôt qui garde sa propre CI : secrets (gitleaks), workflows (zizmor), failles connues des dépendances (OSV-Scanner), code (Semgrep CE). Images épinglées par version et empreinte, actions par SHA.
 - `.github/workflows/controle.yml` : contrôle de ce dépôt (chaque pull request passe `securite.yml`).
-- `.github/workflows/claude-review.yml` : revue optionnelle d'une pull request par Claude, avec la clé API du dépôt appelant.
+- `.github/workflows/claude-review.yml` : revue optionnelle d'une pull request par Claude, avec la clé API du dépôt appelant. Le workflow appelant doit accorder `pull-requests: write`, `issues: write` et `id-token: write`.
 - `PULL_REQUEST_TEMPLATE.md` : modèle de pull request avec la checklist « terminé », appliqué par défaut aux dépôts de l'organisation.
 
 ## Utilisation dans un projet

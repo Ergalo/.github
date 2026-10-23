@@ -53,7 +53,9 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      # Commits de la pull request (ou du push) ; à la demande ou la nuit, les dernières 26 heures.
+      # Commits de la pull request (ou du push ; push qui crée la branche ou réécrit l'histoire : le dernier
+      # commit) ; à la demande ou la nuit, les dernières 26 heures. L'historique complet d'un dépôt se passe une
+      # fois à son branchement (gitleaks git sans --log-opts), puis chaque semaine (doc 45).
       # Les valeurs viennent de variables d'environnement, jamais d'un texte inséré dans la commande.
       - name: Secrets (gitleaks)
         env:
@@ -65,7 +67,7 @@ jobs:
         run: |
           if [ "$EVENEMENT" = "pull_request" ]; then
             PLAGE="$BASE_PR..$TETE_PR"
-          elif [ "$EVENEMENT" = "push" ] && [ -n "$AVANT_PUSH" ] && [ "$AVANT_PUSH" != "0000000000000000000000000000000000000000" ]; then
+          elif [ "$EVENEMENT" = "push" ] && [ -n "$AVANT_PUSH" ] && git cat-file -e "$AVANT_PUSH^{commit}" 2>/dev/null; then
             PLAGE="$AVANT_PUSH..$APRES_PUSH"
           elif [ "$EVENEMENT" = "push" ]; then
             PLAGE="-1 $APRES_PUSH"
