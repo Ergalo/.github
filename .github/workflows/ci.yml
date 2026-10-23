@@ -80,7 +80,6 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     env:
-      DATABASE_URL: postgres://app:app@localhost:${{ job.services.postgres.ports['5432'] }}/app
       BETTER_AUTH_SECRET: ci-secret-only-for-tests-0123456789abcdef
       BETTER_AUTH_URL: http://localhost:3000
     steps:
@@ -93,6 +92,11 @@ jobs:
           node-version: ${{ inputs.node-version }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # Le port de la base n'est connu qu'une fois le service lancé (contexte « job », lisible dans les étapes).
+      - name: Adresse de la base de test
+        env:
+          PORT_BASE: ${{ job.services.postgres.ports['5432'] }}
+        run: echo "DATABASE_URL=postgres://app:app@localhost:$PORT_BASE/app" >> "$GITHUB_ENV"
       - run: pnpm run db:migrate
       # Dépendances système de Chromium : installées par Playwright sur un runner GitHub ; déjà présentes
       # sur ergalo-ci (pas de sudo pour le runner).
