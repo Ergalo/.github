@@ -1,0 +1,95 @@
+# Analyses de sécurité communes Ergalo (workflow réutilisable, appelable seul).
+# Mesure 3 du doc 49 et matrice du doc 45 : secrets, sécurité des workflows, failles connues des
+# dépendances, analyse statique du code. Chaque analyse tourne même si une précédente a échoué
+# (!cancelled()) ; le job reste rouge au moindre échec.
+#
+# Utilisation dans un projet (site, integrations, hq… qui gardent leur propre CI) :
+#   jobs:
+#     securite:
+#       uses: Ergalo/.github/.github/workflows/securite.yml@v2
+#       with:
+#         runner: '["self-hosted","ergalo"]'
+#
+# Images épinglées par version et par empreinte (sha256), actions par SHA : Renovate les met à jour
+# (Ergalo/renovate-config). Les images sont multi-architectures (le runner ergalo-ci est en ARM64).
+#
+# Justifier une alerte, dans le dépôt appelant (jamais en désactivant l'analyse) :
+#   - gitleaks : `.gitleaksignore` (empreinte de l'alerte) ou `.gitleaks.toml` ;
+#   - zizmor : commentaire `# zizmor: ignore[<règle>]` sur la ligne, ou `.github/zizmor.yml` ;
+#   - OSV-Scanner : `osv-scanner.toml` ([[IgnoredVulns]] avec id, ignoreUntil et reason) ;
+#   - Semgrep : commentaire `// nosemgrep: <règle>` avec la raison, ou `.semgrepignore`.
+name: Sécurité Ergalo
+
+on:
+  workflow_call:
+    inputs:
+      runner:
+        description: >-
+          Où tourner, en JSON : '"ubuntu-latest"' (par défaut, runner GitHub) ou '["self-hosted","ergalo"]'
+          (runners d'ergalo-ci, aucune minute facturée, seulement pour un dépôt privé qui a ses runners inscrits).
+        type: string
+        default: '"ubuntu-latest"'
+      semgrep:
+        description: Lancer Semgrep (analyse statique du code)
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  securite:
+    name: Sécurité
+    runs-on: ${{ fromJSON(inputs.runner) }}
+    timeout-minutes: 15
+    env:
+      GITLEAKS: ghcr.io/gitleaks/gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f
+      ZIZMOR: ghcr.io/zizmorcore/zizmor:1.31.1@sha256:42d409dbb851d4c5d35a058cf042b828bea1e3f2884378c526eb0974780e18d9
+      OSV_SCANNER: ghcr.io/google/osv-scanner:v2.7.0@sha256:4f3b7e2c64b9d38a5febc5a7e4a3dfef1d1362f726dea7a2ef4762b46469fcd0
+      SEMGREP: semgrep/semgrep:1.182.0@sha256:4a34048c04fef049f71665047f074cffb00cc3d89482f965a5cd151d589237af
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # Commits de la pull request (ou du push ; push qui crée la branche ou réécrit l'histoire : le dernier
+      # commit) ; à la demande ou la nuit, les dernières 26 heures. L'historique complet d'un dépôt se passe une
+      # fois à son branchement (gitleaks git sans --log-opts), puis chaque semaine (doc 45).
+      # Les valeurs viennent de variables d'environnement, jamais d'un texte inséré dans la commande.
+      - name: Secrets (gitleaks)
+        env:
+          EVENEMENT: ${{ github.event_name }}
+          BASE_PR: ${{ github.event.pull_request.base.sha }}
+          TETE_PR: ${{ github.event.pull_request.head.sha }}
+          AVANT_PUSH: ${{ github.event.before }}
+          APRES_PUSH: ${{ github.sha }}
+        run: |
+          if [ "$EVENEMENT" = "pull_request" ]; then
+            PLAGE="$BASE_PR..$TETE_PR"
+          elif [ "$EVENEMENT" = "push" ] && [ -n "$AVANT_PUSH" ] && git cat-file -e "$AVANT_PUSH^{commit}" 2>/dev/null; then
+            PLAGE="$AVANT_PUSH..$APRES_PUSH"
+          elif [ "$EVENEMENT" = "push" ]; then
+            PLAGE="-1 $APRES_PUSH"
+          else
+            PLAGE="--since=26.hours.ago"
+          fi
+          docker run --rm -v "$PWD:/repo" "$GITLEAKS" git /repo --redact --no-banner --verbose --log-opts="$PLAGE"
+
+      # Sécurité des workflows GitHub Actions (injection de modèles, droits trop larges, actions non épinglées…).
+      - name: Workflows (zizmor)
+        if: ${{ !cancelled() }}
+        run: docker run --rm -v "$PWD:/src:ro" "$ZIZMOR" --offline --no-progress /src
+
+      # Failles connues des dépendances (fichiers de verrouillage npm, pnpm, Python…) ; un dépôt sans
+      # dépendances (comme celui-ci) passe sans erreur.
+      - name: Dépendances (OSV-Scanner)
+        if: ${{ !cancelled() }}
+        run: docker run --rm -v "$PWD:/src:ro" "$OSV_SCANNER" scan source --allow-no-lockfiles -r /src
+
+      - name: Code (Semgrep CE)
+        if: ${{ !cancelled() && inputs.semgrep }}
+        run: >-
+          docker run --rm -v "$PWD:/src:ro" -w /src "$SEMGREP"
+          semgrep scan --config p/default --config p/typescript --error --metrics=off
+          --exclude node_modules --exclude .next --exclude dist

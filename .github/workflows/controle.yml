@@ -1,0 +1,20 @@
+# Contrôle du dépôt Ergalo/.github lui-même : chaque pull request passe les analyses de sécurité
+# communes (securite.yml de la branche proposée). Dépôt public : runner GitHub, sans minute facturée.
+name: Contrôle
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: controle-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  securite:
+    uses: $/.github/workflows/securite.yml
+    with:
+      runner: '"ubuntu-latest"'
