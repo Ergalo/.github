@@ -1,5 +1,6 @@
 # Contrôle du dépôt Ergalo/.github lui-même : chaque pull request passe les analyses de sécurité
-# communes (securite.yml de la branche proposée). Dépôt public : runner GitHub, sans minute facturée.
+# communes (securite.yml de la branche proposée) et les essais du gardien des PR. Dépôt public : runner
+# GitHub, sans minute facturée.
 name: Contrôle
 
 on:
@@ -18,3 +19,17 @@ jobs:
     uses: $/.github/workflows/securite.yml
     with:
       runner: '"ubuntu-latest"'
+
+  essais:
+    name: Essais du gardien des PR
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: 22
+      - name: Essais
+        run: node --test gardien-pr/gardien-pr.test.mjs

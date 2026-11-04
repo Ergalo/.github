@@ -1,0 +1,86 @@
+# Gardien des PR, commun à tous les dépôts de l'organisation (workflow réutilisable). Logique sans IA :
+# gardien-pr/gardien-pr.mjs (base déjà fusionnée : PR reciblée vers la branche par défaut ; conflit ou CI rouge
+# depuis plus de 24 h : étiquette « a-revoir » ; mêmes fichiers qu'une PR de la file « a-fusionner » : ordre de
+# passage conseillé ; une seule note par PR, mise à jour sur place). Ne lance jamais le code d'une PR.
+#
+# Appel dans un dépôt (à chaque changement de PR, pour ce dépôt seulement) :
+#   on:
+#     pull_request_target:
+#       types: [opened, reopened, synchronize, edited, ready_for_review]
+#   permissions: {}
+#   jobs:
+#     gardien:
+#       uses: Ergalo/.github/.github/workflows/gardien-pr.yml@main
+#       with:
+#         runner: '["self-hosted","ergalo"]'
+#         app_id: ${{ vars.FUSION_APP_ID }}
+#       secrets:
+#         FUSION_APP_PRIVATE_KEY: ${{ secrets.FUSION_APP_PRIVATE_KEY }}
+# Le passage horaire sur tous les dépôts de l'organisation part de site (portee: organisation) : il couvre
+# chaque dépôt où l'application ergalo-fusion est installée, futurs compris si elle l'est sur « All repositories ».
+name: Gardien des PR
+
+on:
+  workflow_call:
+    inputs:
+      runner:
+        description: Où tourner, en JSON ('"ubuntu-latest"' ou '["self-hosted","ergalo"]').
+        type: string
+        default: '"ubuntu-latest"'
+      portee:
+        description: « depot » (le dépôt appelant) ou « organisation » (tous les dépôts de l'application).
+        type: string
+        default: depot
+      ignorer:
+        description: Branches (tête ou base) à laisser de côté, séparées par des virgules, « * » en fin de motif.
+        type: string
+        default: ""
+      essai:
+        description: N'écrire rien, seulement dire ce qui serait fait.
+        type: boolean
+        default: false
+      app_id:
+        description: Identifiant de l'application ergalo-fusion (vars.FUSION_APP_ID) ; vide = jeton du workflow.
+        type: string
+        default: ""
+      version:
+        description: Version du gardien (référence de Ergalo/.github).
+        type: string
+        default: main
+    secrets:
+      FUSION_APP_PRIVATE_KEY:
+        required: false
+
+permissions: {}
+
+jobs:
+  gardien:
+    name: Gardien des PR
+    runs-on: ${{ fromJSON(inputs.runner) }}
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      checks: read
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          repository: Ergalo/.github
+          ref: ${{ inputs.version }}
+          sparse-checkout: gardien-pr
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: 22
+      - name: Passer sur les PR ouvertes
+        env:
+          FUSION_APP_ID: ${{ inputs.app_id }}
+          FUSION_APP_PRIVATE_KEY: ${{ secrets.FUSION_APP_PRIVATE_KEY }}
+          GH_TOKEN: ${{ github.token }}
+          GARDIEN_DEPOTS: ${{ github.repository }}
+          GARDIEN_ORGANISATION: ${{ github.repository_owner }}
+          GARDIEN_PORTEE: ${{ inputs.portee }}
+          GARDIEN_IGNORER: ${{ inputs.ignorer }}
+          GARDIEN_ESSAI: ${{ inputs.essai && '1' || '0' }}
+        run: node gardien-pr/gardien-pr.mjs
