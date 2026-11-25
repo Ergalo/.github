@@ -87,6 +87,14 @@ jobs:
         env:
           PORT_BASE: ${{ job.services.postgres.ports['5432'] }}
         run: echo "DATABASE_URL=postgres://app:app@localhost:$PORT_BASE/app" >> "$GITHUB_ENV"
+      # La base de l'application est migrée, comme dans « e2e » : des tests y écrivent (journal d'audit, import).
+      - name: Migrations de la base de test
+        if: ${{ inputs.base }}
+        env:
+          BETTER_AUTH_SECRET: ci-secret-only-for-tests-0123456789abcdef
+          BETTER_AUTH_URL: http://localhost:3000
+          ERP_ENVIRONNEMENT: test
+        run: pnpm run db:migrate
       - run: pnpm run test
       - run: pnpm run build
         env:
