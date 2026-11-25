@@ -52,4 +52,4 @@ Une PR à laisser de côté porte l'étiquette `gardien-ignore` (ou sa branche e
 
 ## Versions
 
-Les projets appellent `@v2` (`@v1` reste en place le temps du passage). Une évolution compatible déplace l'étiquette `v2` ; une évolution incompatible crée `v3`. v2 : actions épinglées par SHA, images par empreinte, droits minimaux, choix du runner, analyses de sécurité à part (gitleaks et zizmor en plus).
+Les projets appellent `@v2` (`@v1` reste en place le temps du passage). Une évolution compatible déplace l'étiquette `v2` ; une évolution incompatible crée `v3`. v2 : actions épinglées par SHA, images par empreinte, droits minimaux, choix du runner, analyses de sécurité à part (gitleaks et zizmor en plus). Ajout compatible : entrée `base` (défaut `false`), qui donne une base Postgres de test (rôle `app`, variable `DATABASE_URL`) au job « Types, lint, tests unitaires, build » pour les dépôts dont les tests unitaires ont besoin d'une base (`with: base: true`).

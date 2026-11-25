@@ -5,6 +5,11 @@
 #       uses: Ergalo/.github/.github/workflows/ci.yml@v2
 #       with:
 #         e2e: true
+#         base: true   # facultatif : une base Postgres de test pour les tests rapides (voir ci-dessous)
+#
+# Entrée « base » (défaut false) : quand elle vaut true, le job « qualité » a un service Postgres (même image et
+# mêmes identifiants de test que « e2e », rôle « app » qui peut créer des bases) et la variable DATABASE_URL,
+# pour les tests unitaires qui créent leur propre base. À false, rien ne change : le service est sauté.
 #
 # v2 (doc 49, mesure 3) : actions épinglées par SHA, droits minimaux, identifiants git non gardés après le
 # checkout, choix du runner, et analyses de sécurité dans un workflow à part (securite.yml : gitleaks,
@@ -20,6 +25,12 @@ on:
         description: Version de Node.js
         type: string
         default: "22"
+      base:
+        description: >-
+          Donner une base Postgres de test au job des tests rapides (types, lint, tests unitaires, build) :
+          variable DATABASE_URL posée, rôle qui peut créer des bases.
+        type: boolean
+        default: false
       e2e:
         description: Lancer les tests de bout en bout (Playwright + Postgres)
         type: boolean
@@ -43,6 +54,21 @@ jobs:
     name: Types, lint, tests unitaires, build
     runs-on: ${{ fromJSON(inputs.runner) }}
     timeout-minutes: 20
+    services:
+      postgres:
+        # Image vide quand « base » vaut false : GitHub saute alors le service.
+        image: ${{ inputs.base && 'postgres:17.11-alpine@sha256:eee6c6e1b0894fa4fe0075eb054af9fd1cf39a35321c2d4110626cfe506411fb' || '' }}
+        env:
+          POSTGRES_USER: app
+          POSTGRES_PASSWORD: app
+          POSTGRES_DB: app
+        # Port choisi par Docker : plusieurs CI peuvent tourner en même temps sur le même serveur.
+        ports: ["5432"]
+        options: >-
+          --health-cmd "pg_isready -U app"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
@@ -55,6 +81,12 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm run typecheck
       - run: pnpm run lint
+      # Le port de la base n'est connu qu'une fois le service lancé (contexte « job », lisible dans les étapes).
+      - name: Adresse de la base de test
+        if: ${{ inputs.base }}
+        env:
+          PORT_BASE: ${{ job.services.postgres.ports['5432'] }}
+        run: echo "DATABASE_URL=postgres://app:app@localhost:$PORT_BASE/app" >> "$GITHUB_ENV"
       - run: pnpm run test
       - run: pnpm run build
         env:
